@@ -46,12 +46,20 @@ body.portrait #pad{position:relative;flex:1;pointer-events:auto;background:#1626
 body.portrait #dir,body.portrait #jump{bottom:auto;top:46%}
 body.portrait #atk{bottom:auto;top:calc(46% - 22px)}
 body.portrait #dlg{top:calc(var(--sh,50%) + 14px)}
+#demo{position:absolute;top:8px;right:calc(8px + env(safe-area-inset-right,0px));font:inherit;font-size:9px;padding:8px 10px;
+  border:3px solid var(--ink);background:var(--paper);color:var(--ink);box-shadow:0 3px 0 rgba(0,0,0,.35);cursor:pointer}
+#demo.on{background:var(--gold)}
+#cap{position:absolute;left:0;right:0;top:20%;text-align:center;color:#fff;font-size:16px;line-height:1.8;pointer-events:none;
+  text-shadow:2px 2px 0 var(--ink),-2px 2px 0 var(--ink),2px -2px 0 var(--ink),-2px -2px 0 var(--ink),0 4px 0 var(--ink)}
+#cap small{display:block;font-size:9px;color:var(--gold)}
+#cap[hidden]{display:none}
+body.demoing:not(.portrait) #pad{visibility:hidden}
 #probe{position:absolute;visibility:hidden;padding-left:env(safe-area-inset-left,0px)}
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="stage"><canvas id="game"></canvas><div id="quest"></div></div>
+  <div id="stage"><canvas id="game"></canvas><div id="quest"></div><div id="cap" hidden></div><button id="demo" aria-label="Show a quick demo of each area">Demo</button></div>
   <div id="pad">
     <div id="dir" role="group" aria-label="Run left or right"><span id="bl">&#9664;</span><span id="br">&#9654;</span></div>
     <button id="atk" class="pad" aria-label="Sword">Sword</button>
@@ -422,6 +430,32 @@ document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 ['gesturestart','contextmenu','dblclick'].forEach(v=>document.addEventListener(v,e=>e.preventDefault()));
 $('dlg').addEventListener('click',()=>{if(dlg&&!(dlg.choice&&dlg.i===dlg.lines.length-1))advance(true);});
 
+function enemyStep(dt){
+    for(const e of enemies){e.fl-=dt;e.stun-=dt;const dx=pl.x-e.x,dy=pl.y-e.y,seen=!demo&&Math.abs(dx)<90&&Math.abs(dy)<34;
+      if(e.stun<=0){
+        if(e.type==='slime'){if(e.ground){e.vx=0;e.t-=dt;if(e.t<=0){if(seen)e.dir=dx>0?1:-1;else if(Math.abs(e.x-e.hx)>44)e.dir=e.x>e.hx?-1:1;
+            if(!floorAhead(e,20)||wallAhead(e,12))e.dir=-e.dir;if(floorAhead(e,20)&&!wallAhead(e,12)){e.vy=-170;e.vx=e.dir*46;}e.t=.6+Math.random()*.5;}}}
+        else if(e.ground){const big=e.type==='chief';if(seen||(!demo&&big&&Math.abs(dx)<150&&Math.abs(dy)<40)){e.dir=dx>0?1:-1;const ok=floorAhead(e,10)&&!wallAhead(e,e.hw+4)&&Math.abs(dx)>3;e.vx=ok?e.dir*(big?52:62):0;}
+          else{if(!floorAhead(e,10)||wallAhead(e,e.hw+4)||(Math.abs(e.x-e.hx)>56&&(e.x-e.hx)*e.dir>0))e.dir=-e.dir;e.vx=e.dir*30;}
+          if(Math.abs(e.vx)>1)e.walk+=dt*8;}}
+      moveEnt(e,dt);if(e.y>WATERY+12){e.x=e.hx;e.y=gy(e.hx);e.vx=e.vy=0;}
+      if(!demo&&Math.abs(dx)<e.hw+4&&pl.y>e.y-e.h&&pl.y-pl.h<e.y)hurt(e.x);}
+}
+
+
+/* ---------- area demo ---------- */
+const AREAS=[['Embervale Village',120,470,BASE*T],['Slime Meadow',700,1090,320],['Waterfall Bridge',1330,1520,320],['Goblin Woods',1720,2110,320],['The Hill Climb',2620,3080,250],['Castle Gate',3340,3600,CASY]];
+let demo=null;const DEMO_T=4.2;
+function demoCap(){const A=AREAS[demo.i];$('cap').innerHTML=A[0]+'<small>'+(demo.i+1)+' / '+AREAS.length+' &middot; tap to stop</small>';}
+function startDemo(){if(demo||dlg)return;demo={i:0,t:0};document.body.classList.add('demoing');fade=.6;$('cap').hidden=false;$('quest').style.visibility='hidden';$('demo').textContent='Stop';$('demo').classList.add('on');demoCap();}
+function stopDemo(){if(!demo)return;demo=null;document.body.classList.remove('demoing');fade=.6;$('cap').hidden=true;$('quest').style.visibility='';$('demo').textContent='Demo';$('demo').classList.remove('on');
+  cam.x=clamp(pl.x-VW/2,0,Math.max(0,PW-VW));cam.y=PH>VH?clamp(camY-VH*.76,0,PH-VH):PH-VH;for(const k in keys)keys[k]=false;}
+function demoStep(dt){demo.t+=dt;if(demo.t>=DEMO_T){demo.i++;demo.t=0;if(demo.i>=AREAS.length){stopDemo();return;}fade=.6;demoCap();}
+  const A=AREAS[demo.i],p=demo.t/DEMO_T,x=A[1]+(A[2]-A[1])*p,last=demo.i===AREAS.length-1;
+  cam.x=clamp(x-VW/2,0,Math.max(0,PW-VW));cam.y=PH>VH?clamp(last?A[3]-VH+46:A[3]-VH*.76,0,PH-VH):PH-VH;enemyStep(dt);}
+$('demo').addEventListener('click',e=>{e.stopPropagation();e.currentTarget.blur();demo?stopDemo():startDemo();});
+$('stage').addEventListener('click',()=>{if(demo)stopDemo();});
+
 /* ---------- update ---------- */
 let lastQ='';
 function update(dt){time+=dt;
@@ -430,7 +464,8 @@ function update(dt){time+=dt;
     if(B(14))ix-=1;if(B(15))ix+=1;if(B(13))down=true;const a=B(0),x=B(2)||B(1);if(a&&!gpA)jumpQ=true;if(x&&!gpX)actQ=true;gpA=a;gpX=x;if(a)jh=true;}}catch(e){}
   ix=clamp(ix,-1,1);if(Math.abs(ix)<.25)ix=0;
   if(fade>0)fade=Math.max(0,fade-dt*1.4);if(bubble>0)bubble-=dt;
-  if(dlg){if(jumpQ||actQ)advance(true);jumpQ=actQ=false;}
+  if(demo){if(jumpQ||actQ||ix)stopDemo();else demoStep(dt);jumpQ=actQ=false;}
+  else if(dlg){if(jumpQ||actQ)advance(true);jumpQ=actQ=false;}
   else{
     if(actQ){actQ=false;const n=nearNpc();if(n&&pl.ground)talk(n);else attack();}
     pl.lock-=dt;pl.atk-=dt;pl.cd-=dt;pl.inv-=dt;pl.jb-=dt;pl.ct-=dt;pl.drop-=dt;
@@ -454,16 +489,7 @@ function update(dt){time+=dt;
     if(S.chief&&gateArmed&&pl.ground&&Math.abs(pl.x-CASX)<10){gateArmed=false;const first=S.stage<2;S.stage=2;save();sfx('up');
       say('The King',first?['Welcome, hero of Embervale!','Your blade and your courage are just what this kingdom needs.','Chapter 1 complete. Bigger adventures lie ahead.','Start the story over?']:['The kingdom is safe for now, hero.','Start the story over?'],
         y=>{if(!y){try{localStorage.removeItem(KEY);}catch(e){}Object.assign(S,{stage:0,coins:0,sword:1,cp:0,chief:false});spawnAll();toCp();fade=1;}},['Keep exploring','New game']);}
-    /* enemies */
-    for(const e of enemies){e.fl-=dt;e.stun-=dt;const dx=pl.x-e.x,dy=pl.y-e.y,seen=Math.abs(dx)<90&&Math.abs(dy)<34;
-      if(e.stun<=0){
-        if(e.type==='slime'){if(e.ground){e.vx=0;e.t-=dt;if(e.t<=0){if(seen)e.dir=dx>0?1:-1;else if(Math.abs(e.x-e.hx)>44)e.dir=e.x>e.hx?-1:1;
-            if(!floorAhead(e,20)||wallAhead(e,12))e.dir=-e.dir;if(floorAhead(e,20)&&!wallAhead(e,12)){e.vy=-170;e.vx=e.dir*46;}e.t=.6+Math.random()*.5;}}}
-        else if(e.ground){const big=e.type==='chief';if(seen||(big&&Math.abs(dx)<150&&Math.abs(dy)<40)){e.dir=dx>0?1:-1;const ok=floorAhead(e,10)&&!wallAhead(e,e.hw+4)&&Math.abs(dx)>3;e.vx=ok?e.dir*(big?52:62):0;}
-          else{if(!floorAhead(e,10)||wallAhead(e,e.hw+4)||(Math.abs(e.x-e.hx)>56&&(e.x-e.hx)*e.dir>0))e.dir=-e.dir;e.vx=e.dir*30;}
-          if(Math.abs(e.vx)>1)e.walk+=dt*8;}}
-      moveEnt(e,dt);if(e.y>WATERY+12){e.x=e.hx;e.y=gy(e.hx);e.vx=e.vy=0;}
-      if(Math.abs(dx)<e.hw+4&&pl.y>e.y-e.h&&pl.y-pl.h<e.y)hurt(e.x);}
+    enemyStep(dt);
     for(let i=coins.length-1;i>=0;i--){const c=coins[i];if(Math.abs(c.x-pl.x)<9&&Math.abs(c.y-(pl.y-7))<12){coins.splice(i,1);gain(1);parts.push({x:c.x,y:c.y,vx:0,vy:-40,g:0,t:.25,c:'#fff3b0'});}}
     for(let i=picks.length-1;i>=0;i--){const p=picks[i];p.t+=dt;p.vy+=600*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;if(p.y>p.gy){p.y=p.gy;p.vy*=-.45;p.vx*=.6;}
       const dx=pl.x-p.x,dy=pl.y-7-p.y,d=Math.hypot(dx,dy)||1;if(p.t>.3&&d<36){p.x+=dx/d*150*dt;p.y+=dy/d*150*dt;p.gy=Math.max(p.gy,p.y);}
@@ -478,10 +504,12 @@ function update(dt){time+=dt;
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.t-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.g*dt;if(p.t<=0)parts.splice(i,1);}
   for(let i=floats.length-1;i>=0;i--){floats[i].t-=dt;floats[i].y-=dt*14;if(floats[i].t<=0)floats.splice(i,1);}
   /* camera */
+  if(!demo){
   if(pl.ground||pl.y>camY)camY=pl.y;look+=(pl.dir*VW*.12-look)*Math.min(1,dt*2.5);
   const tx=pl.x-VW/2+look,ty=pl.x>207*T?camY-VH+46:camY-VH*.76;
   cam.x+=(tx-cam.x)*Math.min(1,dt*9);cam.y+=(ty-cam.y)*Math.min(1,dt*5);
   cam.x=clamp(cam.x,0,Math.max(0,PW-VW));cam.y=PH>VH?clamp(cam.y,0,PH-VH):PH-VH;
+  }
   const q=questText()+(moved?'':(document.body.classList.contains('touch')?'<br>Hold the arrows to run. Sword also talks.':'<br>Arrows or A/D to run. Space to jump. X to swing and talk.'));
   if(q!==lastQ){lastQ=q;$('quest').innerHTML=q;}
 }
@@ -548,7 +576,7 @@ function render(){const g=ctx,cx=Math.round(cam.x),cy=Math.round(cam.y),t=time,h
 }
 let last=0;
 function frame(ms){const dt=Math.min(.033,(ms-last)/1000||0);last=ms;update(dt);render();requestAnimationFrame(frame);}
-window.__g={S,pl,cam,update,render,enemies,coins,keys,npcs,gh,T,jump:()=>{jumpQ=true;},act:()=>{actQ=true;},get dlg(){return dlg;},setCamY:v=>{camY=v;}};
+window.__g={startDemo,stopDemo,get demo(){return demo;},S,pl,cam,update,render,enemies,coins,keys,npcs,gh,T,jump:()=>{jumpQ=true;},act:()=>{actQ=true;},get dlg(){return dlg;},setCamY:v=>{camY=v;}};
 requestAnimationFrame(frame);
 })();
 </script>
